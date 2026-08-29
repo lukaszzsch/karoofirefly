@@ -44,6 +44,24 @@ object MagicshineProtocol {
         return buildFrame(0xA2.toByte(), 0x01, content)
     }
 
+    /**
+     * Turns off multiple channels in a single frame. Used for the "OFF" mode so that
+     * both the high-beam (channel 1) and low-beam (channel 0, unverified hypothesis —
+     * see MagicshineDeviceConfig) outputs are switched off together.
+     */
+    fun buildOffCommand(channels: Set<Int>): ByteArray {
+        val content = ByteArray(14)
+        content[0] = 0x01
+        for (channel in channels) {
+            val offset = channel * 3 + 1
+            content[offset] = 0x01
+            content[offset + 1] = 0x01
+            content[offset + 2] = 0x00
+        }
+        content[13] = FLAG_SAVE
+        return buildFrame(0xA2.toByte(), 0x01, content)
+    }
+
     fun buildModule2Frame(modeCode: Int, value: Int): ByteArray {
         val checksum = value xor (modeCode + 0x04)
         val hex = "DE14A2010200010A01%02X%02X000000000000BB%02XED".format(modeCode, value, checksum)
@@ -81,31 +99,45 @@ object MagicshineProtocol {
 
 enum class MagicshineModuleType { M1, M2 }
 
+/**
+ * Mode id format: "<TYPE>_<bright>" for high beam (channel 1, original behavior) or
+ * "<TYPE>_LOW_<bright>" for low beam (channel 0).
+ *
+ * UNVERIFIED HYPOTHESIS: channel 0 = low beam output. This is based on channel 1 being
+ * hardcoded for all existing (confirmed high-beam) commands, leaving channel 0 unused.
+ * Needs on-device confirmation — see MagicshineBleController logs when testing.
+ * Only wired up for M1; the M2 frame format has no known channel/beam field yet.
+ */
 data class MagicshineDeviceConfig(
     val moduleType: MagicshineModuleType,
     val modes: List<LightModeOption>,
 ) {
     fun buildCommand(modeId: String): ByteArray? {
         if (modeId == "OFF") return when (moduleType) {
-            MagicshineModuleType.M1 -> MagicshineProtocol.buildOffCommand(1)
+            MagicshineModuleType.M1 -> MagicshineProtocol.buildOffCommand(setOf(0, 1))
             MagicshineModuleType.M2 -> MagicshineProtocol.MODULE2_OFF
         }
-        val parts = modeId.split("_", limit = 2)
-        if (parts.size != 2) return null
-        val bright = parts[1].toIntOrNull() ?: return null
+        val parts = modeId.split("_")
+        if (parts.size < 2) return null
+        val bright = parts.last().toIntOrNull() ?: return null
+        val isLowBeam = parts.size == 3 && parts[1] == "LOW"
+        if (parts.size == 3 && !isLowBeam) return null
+        val typeToken = parts[0]
 
         return when (moduleType) {
             MagicshineModuleType.M1 -> {
-                val model = when (parts[0]) {
+                val model = when (typeToken) {
                     "STEADY" -> MagicshineProtocol.MODE_STEADY
                     "FLASH" -> MagicshineProtocol.MODE_FAST_FLASH
                     "SOS" -> MagicshineProtocol.MODE_SOS
                     else -> return null
                 }
-                MagicshineProtocol.buildBrightCommand(1, 1, model, bright)
+                val channel = if (isLowBeam) 0 else 1
+                MagicshineProtocol.buildBrightCommand(1, channel, model, bright)
             }
             MagicshineModuleType.M2 -> {
-                val modeCode = when (parts[0]) {
+                if (isLowBeam) return null // not supported yet, see class doc
+                val modeCode = when (typeToken) {
                     "STEADY" -> 0x01
                     "FLASH" -> 0x03
                     "SOS" -> 0x02
@@ -131,13 +163,25 @@ data class MagicshineDeviceConfig(
 
             val modes = mutableListOf(LightModeOption("OFF", "Off"))
             for (b in BRIGHTNESS_STEPS) {
-                modes.add(LightModeOption("STEADY_$b", "Steady $b%"))
+                modes.add(LightModeOption("STEADY_$b", "Steady $b% (High)"))
             }
             for (b in BRIGHTNESS_STEPS) {
-                modes.add(LightModeOption("FLASH_$b", "Flash $b%"))
+                modes.add(LightModeOption("FLASH_$b", "Flash $b% (High)"))
             }
             for (b in BRIGHTNESS_STEPS) {
-                modes.add(LightModeOption("SOS_$b", "SOS $b%"))
+                modes.add(LightModeOption("SOS_$b", "SOS $b% (High)"))
+            }
+
+            if (moduleType == MagicshineModuleType.M1) {
+                for (b in BRIGHTNESS_STEPS) {
+                    modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low) [untested]"))
+                }
+                for (b in BRIGHTNESS_STEPS) {
+                    modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low) [untested]"))
+                }
+                for (b in BRIGHTNESS_STEPS) {
+                    modes.add(LightModeOption("SOS_LOW_$b", "SOS $b% (Low) [untested]"))
+                }
             }
 
             return MagicshineDeviceConfig(moduleType = moduleType, modes = modes)
