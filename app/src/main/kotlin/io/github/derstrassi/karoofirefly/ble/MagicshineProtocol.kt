@@ -105,12 +105,11 @@ enum class MagicshineModuleType { M1, M2 }
  *
  * channel 0 = low beam, channel 1 = high beam. For M1 this was an unverified hypothesis
  * based on channel 1 being hardcoded for all pre-existing (confirmed high-beam) commands.
- * For M2 it is CONFIRMED: a captured real frame from the official Magicshine app
- * ("DE14A2010101010A000150000000000000BB56ED", logged as "STEADY LOW") decodes to this
- * exact frame layout with channel 0 set to STEADY — i.e. M2 devices accept the same
- * content-array frame as M1, not just the separate hex/modeCode format below.
- * FLASH/SOS low-beam on M2 are extrapolated from that confirmed layout (same frame,
- * different model byte) and are not independently verified yet.
+ * For M2 it is CONFIRMED on real hardware: a captured official-app frame showed channel 0
+ * STEADY working, and on-device testing confirmed FLASH (model=3) also works correctly on
+ * channel 0. SOS (model=4) was tested and is broken — it produces a fast glitchy flicker
+ * instead of a real SOS pattern — so SOS low-beam is intentionally left out for M2 until
+ * the correct encoding is found.
  */
 data class MagicshineDeviceConfig(
     val moduleType: MagicshineModuleType,
@@ -120,6 +119,18 @@ data class MagicshineDeviceConfig(
         if (modeId == "OFF") return when (moduleType) {
             MagicshineModuleType.M1 -> MagicshineProtocol.buildOffCommand(setOf(0, 1))
             MagicshineModuleType.M2 -> MagicshineProtocol.MODULE2_OFF
+        }
+        // Debug/hunting escape hatch: "RAW_<channel>_<model>_<bright>" sends the
+        // content-array frame directly with whatever values are given, bypassing the
+        // named-mode parsing below entirely. Lets us search for the correct SOS model
+        // byte (etc.) live from the UI without rebuilding the app for every guess.
+        if (modeId.startsWith("RAW_")) {
+            val rawParts = modeId.removePrefix("RAW_").split("_")
+            if (rawParts.size != 3) return null
+            val channel = rawParts[0].toIntOrNull() ?: return null
+            val model = rawParts[1].toIntOrNull() ?: return null
+            val bright = rawParts[2].toIntOrNull() ?: return null
+            return MagicshineProtocol.buildBrightCommand(1, channel, model, bright)
         }
         val parts = modeId.split("_")
         if (parts.size < 2) return null
@@ -142,10 +153,11 @@ data class MagicshineDeviceConfig(
             MagicshineModuleType.M2 -> {
                 if (isLowBeam) {
                     // Confirmed frame layout for M2 low beam — see class doc.
+                    // SOS (model=4) is known broken in this frame (glitchy flicker, not a
+                    // real SOS pattern) — refuse rather than send a bad command.
                     val model = when (typeToken) {
                         "STEADY" -> MagicshineProtocol.MODE_STEADY
                         "FLASH" -> MagicshineProtocol.MODE_FAST_FLASH
-                        "SOS" -> MagicshineProtocol.MODE_SOS
                         else -> return null
                     }
                     MagicshineProtocol.buildBrightCommand(1, 0, model, bright)
@@ -165,6 +177,7 @@ data class MagicshineDeviceConfig(
 
     companion object {
         private val BRIGHTNESS_STEPS = listOf(10, 25, 50, 100)
+        private val STEADY_BRIGHTNESS_STEPS = listOf(10, 25, 50, 75, 100)
 
         fun forDevice(bleName: String): MagicshineDeviceConfig {
             // The digit after "M" is the device's lamp group count; only single-group
@@ -177,7 +190,7 @@ data class MagicshineDeviceConfig(
             }
 
             val modes = mutableListOf(LightModeOption("OFF", "Off"))
-            for (b in BRIGHTNESS_STEPS) {
+            for (b in STEADY_BRIGHTNESS_STEPS) {
                 modes.add(LightModeOption("STEADY_$b", "Steady $b% (High)"))
             }
             for (b in BRIGHTNESS_STEPS) {
@@ -190,7 +203,7 @@ data class MagicshineDeviceConfig(
             when (moduleType) {
                 MagicshineModuleType.M1 -> {
                     // channel 0 = low beam is an unverified hypothesis for M1.
-                    for (b in BRIGHTNESS_STEPS) {
+                    for (b in STEADY_BRIGHTNESS_STEPS) {
                         modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low) [untested]"))
                     }
                     for (b in BRIGHTNESS_STEPS) {
@@ -201,15 +214,15 @@ data class MagicshineDeviceConfig(
                     }
                 }
                 MagicshineModuleType.M2 -> {
-                    // STEADY confirmed via a captured official-app frame; FLASH/SOS extrapolated.
-                    for (b in BRIGHTNESS_STEPS) {
+                    // STEADY and FLASH confirmed working on real M2 hardware (channel 0).
+                    // SOS (model=4) was tried and produces a fast glitchy flicker instead of
+                    // a real SOS pattern — the content-array frame format doesn't carry SOS
+                    // correctly for M2, so it's left out until the correct encoding is found.
+                    for (b in STEADY_BRIGHTNESS_STEPS) {
                         modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low)"))
                     }
                     for (b in BRIGHTNESS_STEPS) {
-                        modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low) [untested]"))
-                    }
-                    for (b in BRIGHTNESS_STEPS) {
-                        modes.add(LightModeOption("SOS_LOW_$b", "SOS $b% (Low) [untested]"))
+                        modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low)"))
                     }
                 }
             }
