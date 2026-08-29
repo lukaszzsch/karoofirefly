@@ -187,6 +187,8 @@ class LightControlEngine(
         ambientLightSensor?.let {
             if (settings.controlMode == LightControlMode.AMBIENT_LIGHT || settings.controlMode == LightControlMode.COMBINED) {
                 it.nightThreshold = settings.ambientNightThreshold
+                it.minDwellTimeMs = settings.ambientDwellSeconds * 1000L
+                it.dayLockoutMs = settings.ambientNightLockoutSeconds * 1000L
                 it.start()
                 startSensorObserving()
             } else {
