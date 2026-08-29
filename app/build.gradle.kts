@@ -5,28 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-fun gitShortSha(): String = try {
-    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-        .directory(rootDir)
-        .redirectErrorStream(true)
-        .start()
-    process.inputStream.bufferedReader().readText().trim().ifEmpty { "unknown" }
-} catch (e: Exception) {
-    "unknown"
-}
-
-// Monotonic version code derived from the commit count. Requires full git
-// history — CI must check out with fetch-depth: 0 (a shallow clone returns 1).
-fun gitCommitCount(): Int = try {
-    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
-        .directory(rootDir)
-        .redirectErrorStream(true)
-        .start()
-    process.inputStream.bufferedReader().readText().trim().toInt()
-} catch (e: Exception) {
-    1
-}
-
 android {
     namespace = "io.github.derstrassi.karoofirefly"
     compileSdk = 35
@@ -35,9 +13,8 @@ android {
         applicationId = "io.github.derstrassi.karoofirefly"
         minSdk = 23
         targetSdk = 34
-        versionCode = gitCommitCount()
-        versionName = "0.5.4-beta4"
-        buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")
+        versionCode = 18
+        versionName = "0.5.4-lowbeam2"
     }
 
     signingConfigs {
