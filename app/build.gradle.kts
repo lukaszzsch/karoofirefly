@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.derstrassi.karoofirefly"
         minSdk = 23
         targetSdk = 34
-        versionCode = 21
-        versionName = "0.5.4-m2full2"
+        versionCode = 22
+        versionName = "0.5.4-ambientdelay"
         buildConfigField(
             "String",
             "GIT_SHA",
