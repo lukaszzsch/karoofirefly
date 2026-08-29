@@ -46,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.derstrassi.karoofirefly.BuildConfig
 import io.github.derstrassi.karoofirefly.DiscoveredLight
 import io.github.derstrassi.karoofirefly.R
 import io.github.derstrassi.karoofirefly.data.DayTimeZone
@@ -80,6 +79,8 @@ fun SettingsScreen(
     var useTimeBased by remember(settings) { mutableStateOf(settings.useTimeBased) }
     var useAmbientLight by remember(settings) { mutableStateOf(settings.useAmbientLight) }
     var nightThreshold by remember(settings) { mutableIntStateOf(settings.ambientNightThreshold) }
+    var dwellSeconds by remember(settings) { mutableFloatStateOf(settings.ambientDwellSeconds.toFloat()) }
+    var nightLockoutSeconds by remember(settings) { mutableFloatStateOf(settings.ambientNightLockoutSeconds.toFloat()) }
     var zoneNotifications by remember(settings) { mutableStateOf(settings.zoneNotificationsEnabled) }
 
     fun saveSettings() {
@@ -93,6 +94,8 @@ fun SettingsScreen(
                 keepLightsOnAtNightWhilePaused = keepOnAtNight,
                 lightControlMode = LightControlMode.fromFlags(useTimeBased, useAmbientLight).name,
                 ambientNightThreshold = nightThreshold,
+                ambientDwellSeconds = dwellSeconds.toInt(),
+                ambientNightLockoutSeconds = nightLockoutSeconds.toInt(),
                 zoneNotificationsEnabled = zoneNotifications,
             ),
         )
@@ -275,6 +278,36 @@ fun SettingsScreen(
                     valueRange = 10f..500f,
                     steps = 48,
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Reaction delay: ${dwellSeconds.toInt()}s")
+                Text(
+                    "How long a light level must hold before switching mode (avoids flicker from brief shade/glare).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = dwellSeconds,
+                    onValueChange = { dwellSeconds = it },
+                    onValueChangeFinished = { saveSettings() },
+                    valueRange = 1f..60f,
+                    steps = 58,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Night→Day lockout: ${nightLockoutSeconds.toInt()}s")
+                Text(
+                    "Extra hold-off before switching back to Day, so a brief bright gap (e.g. a clearing in trees) doesn't flip the mode back.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = nightLockoutSeconds,
+                    onValueChange = { nightLockoutSeconds = it },
+                    onValueChangeFinished = { saveSettings() },
+                    valueRange = 0f..300f,
+                    steps = 59,
+                )
             }
         }
 
@@ -349,14 +382,6 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_SHA})",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
     }
 }
 
