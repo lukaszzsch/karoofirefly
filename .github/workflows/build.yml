@@ -3,20 +3,14 @@ name: Build
 on:
   push:
     branches: ['**']
-    tags: ['v*']
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # full history so gitCommitCount() (versionCode) is correct
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -27,54 +21,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ runner.temp }}/release.jks"
-
-      - name: Build release APK
-        env:
-          USERNAME: ${{ github.actor }}
-          TOKEN: ${{ secrets.KAROO_EXT_TOKEN }}
-          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
-
-      - name: Rename APK
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            VERSION="${GITHUB_SHA::7}"
-          fi
-          cp app/build/outputs/apk/release/app-release.apk "karoo-light-controller-${VERSION}.apk"
-          echo "APK_NAME=karoo-light-controller-${VERSION}.apk" >> "$GITHUB_ENV"
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: karoo-light-controller
-          path: ${{ env.APK_NAME }}
-
-      - name: Update manifest.json with release URL
-        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          TAG="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-          APK_URL="https://github.com/${REPO}/releases/download/${TAG}/karoo-light-controller-${VERSION}.apk"
-          cd app
-          jq --arg url "$APK_URL" --arg ver "$VERSION" \
-            '.latestApkUrl = $url | .latestVersion = $ver' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
-          cd ..
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app/manifest.json
-          git diff --cached --quiet || git commit -m "Update manifest for ${TAG}" && git push origin HEAD:main
-
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.APK_NAME }}
-          prerelease: ${{ contains(github.ref_name, '-') || startsWith(github.ref_name, 'v0.') }}
-          generate_release_notes: true
+          name: karoo-light-controller-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
