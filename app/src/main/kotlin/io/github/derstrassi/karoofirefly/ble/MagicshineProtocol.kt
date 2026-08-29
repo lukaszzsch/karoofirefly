@@ -131,7 +131,10 @@ data class MagicshineDeviceConfig(
     fun buildCommand(modeId: String): ByteArray? {
         if (modeId == "OFF") return when (moduleType) {
             MagicshineModuleType.M1 -> MagicshineProtocol.buildOffCommand(setOf(0, 1))
-            MagicshineModuleType.M2 -> MagicshineProtocol.buildOffCommand(setOf(0, 1))
+            // Reverted to the original, proven-safe M2 off frame — the unified
+            // content-array off (setting both channels to steady/0%) was briefly
+            // flashing high beam before settling into a newly-selected low mode.
+            MagicshineModuleType.M2 -> MagicshineProtocol.MODULE2_OFF
         }
         // Debug/hunting escape hatch: "RAW_<channel>_<model>_<bright>" sends the
         // content-array frame directly with whatever values are given, bypassing the
