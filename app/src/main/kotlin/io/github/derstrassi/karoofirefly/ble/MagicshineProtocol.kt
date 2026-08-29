@@ -103,10 +103,14 @@ enum class MagicshineModuleType { M1, M2 }
  * Mode id format: "<TYPE>_<bright>" for high beam (channel 1, original behavior) or
  * "<TYPE>_LOW_<bright>" for low beam (channel 0).
  *
- * UNVERIFIED HYPOTHESIS: channel 0 = low beam output. This is based on channel 1 being
- * hardcoded for all existing (confirmed high-beam) commands, leaving channel 0 unused.
- * Needs on-device confirmation — see MagicshineBleController logs when testing.
- * Only wired up for M1; the M2 frame format has no known channel/beam field yet.
+ * channel 0 = low beam, channel 1 = high beam. For M1 this was an unverified hypothesis
+ * based on channel 1 being hardcoded for all pre-existing (confirmed high-beam) commands.
+ * For M2 it is CONFIRMED: a captured real frame from the official Magicshine app
+ * ("DE14A2010101010A000150000000000000BB56ED", logged as "STEADY LOW") decodes to this
+ * exact frame layout with channel 0 set to STEADY — i.e. M2 devices accept the same
+ * content-array frame as M1, not just the separate hex/modeCode format below.
+ * FLASH/SOS low-beam on M2 are extrapolated from that confirmed layout (same frame,
+ * different model byte) and are not independently verified yet.
  */
 data class MagicshineDeviceConfig(
     val moduleType: MagicshineModuleType,
@@ -136,14 +140,25 @@ data class MagicshineDeviceConfig(
                 MagicshineProtocol.buildBrightCommand(1, channel, model, bright)
             }
             MagicshineModuleType.M2 -> {
-                if (isLowBeam) return null // not supported yet, see class doc
-                val modeCode = when (typeToken) {
-                    "STEADY" -> 0x01
-                    "FLASH" -> 0x03
-                    "SOS" -> 0x02
-                    else -> return null
+                if (isLowBeam) {
+                    // Confirmed frame layout for M2 low beam — see class doc.
+                    val model = when (typeToken) {
+                        "STEADY" -> MagicshineProtocol.MODE_STEADY
+                        "FLASH" -> MagicshineProtocol.MODE_FAST_FLASH
+                        "SOS" -> MagicshineProtocol.MODE_SOS
+                        else -> return null
+                    }
+                    MagicshineProtocol.buildBrightCommand(1, 0, model, bright)
+                } else {
+                    // Existing, already-working high-beam path (hex/modeCode format).
+                    val modeCode = when (typeToken) {
+                        "STEADY" -> 0x01
+                        "FLASH" -> 0x03
+                        "SOS" -> 0x02
+                        else -> return null
+                    }
+                    MagicshineProtocol.buildModule2Frame(modeCode, bright)
                 }
-                MagicshineProtocol.buildModule2Frame(modeCode, bright)
             }
         }
     }
@@ -172,15 +187,30 @@ data class MagicshineDeviceConfig(
                 modes.add(LightModeOption("SOS_$b", "SOS $b% (High)"))
             }
 
-            if (moduleType == MagicshineModuleType.M1) {
-                for (b in BRIGHTNESS_STEPS) {
-                    modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low) [untested]"))
+            when (moduleType) {
+                MagicshineModuleType.M1 -> {
+                    // channel 0 = low beam is an unverified hypothesis for M1.
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low) [untested]"))
+                    }
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low) [untested]"))
+                    }
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("SOS_LOW_$b", "SOS $b% (Low) [untested]"))
+                    }
                 }
-                for (b in BRIGHTNESS_STEPS) {
-                    modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low) [untested]"))
-                }
-                for (b in BRIGHTNESS_STEPS) {
-                    modes.add(LightModeOption("SOS_LOW_$b", "SOS $b% (Low) [untested]"))
+                MagicshineModuleType.M2 -> {
+                    // STEADY confirmed via a captured official-app frame; FLASH/SOS extrapolated.
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("STEADY_LOW_$b", "Steady $b% (Low)"))
+                    }
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("FLASH_LOW_$b", "Flash $b% (Low) [untested]"))
+                    }
+                    for (b in BRIGHTNESS_STEPS) {
+                        modes.add(LightModeOption("SOS_LOW_$b", "SOS $b% (Low) [untested]"))
+                    }
                 }
             }
 
