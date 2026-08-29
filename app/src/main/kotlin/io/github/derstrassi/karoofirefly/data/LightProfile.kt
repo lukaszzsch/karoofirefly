@@ -112,6 +112,8 @@ data class LightControllerSettings(
     val profile: LightProfile = LightProfile(),
     val lightControlMode: String = "MANUAL_ONLY",
     val ambientNightThreshold: Int = 50,
+    val ambientDwellSeconds: Int = 10,
+    val ambientNightLockoutSeconds: Int = 120,
     val zoneNotificationsEnabled: Boolean = true,
     val lightAssignments: List<LightAssignment> = emptyList(),
 ) {
