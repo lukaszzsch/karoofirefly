@@ -253,7 +253,6 @@ private fun RawTestSection(
         )
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             OutlinedTextField(
@@ -262,7 +261,7 @@ private fun RawTestSection(
                 label = { Text("Ch") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(64.dp),
+                modifier = Modifier.width(56.dp),
             )
             OutlinedTextField(
                 value = model,
@@ -270,7 +269,7 @@ private fun RawTestSection(
                 label = { Text("Model") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(72.dp),
+                modifier = Modifier.width(64.dp),
             )
             OutlinedTextField(
                 value = bright,
@@ -278,25 +277,26 @@ private fun RawTestSection(
                 label = { Text("Bright") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(72.dp),
+                modifier = Modifier.width(64.dp),
             )
-            if (enabled) {
-                IconButton(
-                    onClick = {
-                        if (channel.isNotBlank() && model.isNotBlank() && bright.isNotBlank()) {
-                            onSend(channel, model, bright)
-                        }
-                    },
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Send raw command",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(
+            enabled = enabled,
+            onClick = {
+                if (channel.isNotBlank() && model.isNotBlank() && bright.isNotBlank()) {
+                    onSend(channel, model, bright)
                 }
-            }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "Send raw command",
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Send (3s)")
         }
     }
 }
