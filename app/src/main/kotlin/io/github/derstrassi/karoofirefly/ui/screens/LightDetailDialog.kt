@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -20,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.derstrassi.karoofirefly.DiscoveredLight
 import io.github.derstrassi.karoofirefly.data.LightAssignment
@@ -204,9 +208,97 @@ fun LightDetailDialog(
                         }
                     }
                 }
+
+                if (light.protocol == LightProtocol.BLE) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    RawTestSection(
+                        enabled = onTestMode != null && light.connected,
+                        onSend = { channel, model, bright ->
+                            onTestMode?.invoke(light.id, "RAW_${channel}_${model}_${bright}")
+                        },
+                    )
+                }
             }
         },
     )
+}
+
+/**
+ * Debug tool: sends an arbitrary content-array BLE frame (channel/model/bright) via the
+ * existing 3-second test-then-off path, so you can hunt for the correct "model" byte for
+ * a mode (e.g. SOS on M2 low beam) live, without rebuilding/reinstalling the app for each
+ * guess. Channel 0 = low beam, channel 1 = high beam. Model: 1=STEADY, 2=SLOW_FLASH (M1
+ * enum, unconfirmed elsewhere), 3=FAST_FLASH, 4=SOS (confirmed broken on M2 low beam) —
+ * try other values (e.g. 5, 6, 0) to search for one that produces a real SOS pattern.
+ */
+@Composable
+private fun RawTestSection(
+    enabled: Boolean,
+    onSend: (channel: String, model: String, bright: String) -> Unit,
+) {
+    var channel by remember { mutableStateOf("0") }
+    var model by remember { mutableStateOf("4") }
+    var bright by remember { mutableStateOf("50") }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "Raw test (debug)",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "channel 0=low 1=high · sends for 3s then off",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            OutlinedTextField(
+                value = channel,
+                onValueChange = { channel = it.filter(Char::isDigit) },
+                label = { Text("Ch") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(64.dp),
+            )
+            OutlinedTextField(
+                value = model,
+                onValueChange = { model = it.filter(Char::isDigit) },
+                label = { Text("Model") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(72.dp),
+            )
+            OutlinedTextField(
+                value = bright,
+                onValueChange = { bright = it.filter(Char::isDigit) },
+                label = { Text("Bright") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(72.dp),
+            )
+            if (enabled) {
+                IconButton(
+                    onClick = {
+                        if (channel.isNotBlank() && model.isNotBlank() && bright.isNotBlank()) {
+                            onSend(channel, model, bright)
+                        }
+                    },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Send raw command",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
