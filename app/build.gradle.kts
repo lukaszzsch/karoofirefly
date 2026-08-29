@@ -15,6 +15,11 @@ android {
         targetSdk = 34
         versionCode = 18
         versionName = "0.5.4-lowbeam2"
+        buildConfigField(
+            "String",
+            "GIT_SHA",
+            "\"${(project.findProperty("gitSha") as String?) ?: "dev"}\"",
+        )
     }
 
     signingConfigs {
