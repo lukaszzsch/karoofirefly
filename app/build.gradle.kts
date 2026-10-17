@@ -4,11 +4,11 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
-
+ 
 android {
     namespace = "io.github.derstrassi.karoofirefly"
     compileSdk = 35
-
+ 
     defaultConfig {
         applicationId = "io.github.derstrassi.karoofirefly"
         minSdk = 23
@@ -21,7 +21,7 @@ android {
             "\"${(project.findProperty("gitSha") as String?) ?: "dev"}\"",
         )
     }
-
+ 
     signingConfigs {
         create("release") {
             val storeFilePath = System.getenv("KEYSTORE_PATH")
@@ -33,7 +33,7 @@ android {
             }
         }
     }
-
+ 
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -58,7 +58,7 @@ android {
         buildConfig = true
     }
 }
-
+ 
 dependencies {
     implementation(libs.hammerhead.karoo.ext)
     implementation(libs.androidx.core.ktx)
@@ -72,7 +72,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.nordic.ble.client)
-
+ 
     // ANT Android SDK - place ant-lib.aar in app/libs/
     // Download from: https://github.com/ant-wireless/ANT-Android-SDKs
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
