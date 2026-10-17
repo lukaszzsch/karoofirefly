@@ -29,16 +29,18 @@ class KarooLightControl(private val context: Context) : LightController {
         private const val TX_REGISTER_DEVICE_CONNECTION = 6
         private const val TX_UNREGISTER_DEVICE_CONNECTION = 7
         private const val TX_GET_LIGHT_CMD = 17
+
+        // Karoo firmware 1.663.x added a method (getLowBatteryInfo) at transaction 6 of the
+        // SensorService AIDL, which moved every transaction from 6 upwards by one. The values
+        // above are the original numbering; the light-command getter is searched for within
+        // this many positions above it, and the other shifted codes follow from where it is found.
+        private const val MAX_TX_SHIFT = 2
     }
 
     private var sensorBinder: IBinder? = null
     private var lightCmdBinder: IBinder? = null
-
-    // Interface token written in front of every call to the LightCommand binder. Starts as
-    // the historical name, then is replaced with whatever the binder itself reports, because
-    // Karoo firmware 1.663.x rejects the old name ("Binder invocation to an incorrect interface").
-    private var lightCmdDescriptor: String = LIGHT_CMD_DESCRIPTOR
-    private var listenerDescriptorWarned = false
+    private var txRegisterConnection = TX_REGISTER_DEVICE_CONNECTION
+    private var txUnregisterConnection = TX_UNREGISTER_DEVICE_CONNECTION
     private var lightModeParcelableCreator: ((String) -> Parcelable)? = null
     private var deviceCreator: ((String) -> Parcelable)? = null
     private var isBound = false
@@ -73,51 +75,49 @@ class KarooLightControl(private val context: Context) : LightController {
         }
     }
 
+    /**
+     * Finds the LightCommand binder. The getter's transaction number differs between firmware
+     * versions, so each candidate is only accepted if the binder it returns really is the
+     * LightCommand interface. A binder of any other interface (e.g. the trainer command one)
+     * is never used. All candidates are argument-less "get binder" calls.
+     */
     private fun getLightCommandBinder(service: IBinder) {
+        lightCmdBinder = null
+        for (shift in 0..MAX_TX_SHIFT) {
+            val code = TX_GET_LIGHT_CMD + shift
+            val binder = fetchBinder(service, code) ?: continue
+            val descriptor = try {
+                binder.interfaceDescriptor
+            } catch (e: Exception) {
+                null
+            }
+            Timber.d("$TAG: SensorService transaction $code returned interface $descriptor")
+            if (descriptor == LIGHT_CMD_DESCRIPTOR) {
+                lightCmdBinder = binder
+                txRegisterConnection = TX_REGISTER_DEVICE_CONNECTION + shift
+                txUnregisterConnection = TX_UNREGISTER_DEVICE_CONNECTION + shift
+                Timber.i("$TAG: LightCommand binder found at transaction $code (firmware shift +$shift)")
+                return
+            }
+        }
+        Timber.e("$TAG: LightCommand binder not found; this Karoo firmware is not supported yet")
+    }
+
+    private fun fetchBinder(service: IBinder, code: Int): IBinder? {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
-        try {
+        return try {
             data.writeInterfaceToken(SENSOR_DESCRIPTOR)
-            service.transact(TX_GET_LIGHT_CMD, data, reply, 0)
+            service.transact(code, data, reply, 0)
             reply.readException()
-            lightCmdBinder = reply.readStrongBinder()
-            Timber.d("$TAG: Got LightCommand binder: $lightCmdBinder")
-            lightCmdBinder?.let { resolveLightCmdDescriptor(it) }
+            reply.readStrongBinder()
         } catch (e: Exception) {
-            Timber.e(e, "$TAG: Failed to get LightCommand binder")
+            Timber.w("$TAG: SensorService transaction $code gave no binder (${e.javaClass.simpleName})")
+            null
         } finally {
             data.recycle()
             reply.recycle()
         }
-    }
-
-    /** Asks the remote binder which interface name it expects and uses that for later calls. */
-    private fun resolveLightCmdDescriptor(binder: IBinder) {
-        val actual = try {
-            binder.interfaceDescriptor
-        } catch (e: Exception) {
-            Timber.w(e, "$TAG: Could not read LightCommand binder descriptor")
-            null
-        }
-        Timber.i("$TAG: LightCommand descriptor: expected=$LIGHT_CMD_DESCRIPTOR actual=$actual")
-        lightCmdDescriptor = if (!actual.isNullOrEmpty()) actual else LIGHT_CMD_DESCRIPTOR
-    }
-
-    /**
-     * Like Parcel.enforceInterface, but tolerates a renamed listener interface. When the check
-     * fails the parcel position is already past the interface token, so the payload can still be
-     * read as before. Logs every callback so a silent listener is visible in logcat.
-     */
-    private fun enforceListenerInterface(data: Parcel, code: Int) {
-        try {
-            data.enforceInterface(LISTENER_DESCRIPTOR)
-        } catch (e: SecurityException) {
-            if (!listenerDescriptorWarned) {
-                listenerDescriptorWarned = true
-                Timber.w("$TAG: Listener interface name differs from $LISTENER_DESCRIPTOR, continuing anyway")
-            }
-        }
-        Timber.d("$TAG: Listener callback code=$code size=${data.dataSize()}")
     }
 
     private fun loadLightModeClass() {
@@ -227,7 +227,7 @@ class KarooLightControl(private val context: Context) : LightController {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
-            data.writeInterfaceToken(lightCmdDescriptor)
+            data.writeInterfaceToken(LIGHT_CMD_DESCRIPTOR)
             data.writeString(deviceId)
             val device = deviceCreator?.invoke(deviceId)
             if (device != null) {
@@ -276,7 +276,7 @@ class KarooLightControl(private val context: Context) : LightController {
         val listenerBinder = object : Binder() {
             init { attachInterface(iface, LISTENER_DESCRIPTOR) }
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                if (code in 1..16777215) enforceListenerInterface(data, code)
+                if (code in 1..16777215) data.enforceInterface(LISTENER_DESCRIPTOR)
                 when (code) {
                     1 -> {
                         data.readString()
@@ -299,7 +299,7 @@ class KarooLightControl(private val context: Context) : LightController {
         val callData = Parcel.obtain()
         val callReply = Parcel.obtain()
         try {
-            callData.writeInterfaceToken(lightCmdDescriptor)
+            callData.writeInterfaceToken(LIGHT_CMD_DESCRIPTOR)
             callData.writeString(deviceId)
             callData.writeInt(1)
             device.writeToParcel(callData, 0)
@@ -369,7 +369,7 @@ class KarooLightControl(private val context: Context) : LightController {
         val listenerBinder = object : Binder() {
             init { attachInterface(iface, LISTENER_DESCRIPTOR) }
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                if (code in 1..16777215) enforceListenerInterface(data, code)
+                if (code in 1..16777215) data.enforceInterface(LISTENER_DESCRIPTOR)
                 when (code) {
                     1 -> {
                         data.readString() // transactionId
@@ -414,7 +414,7 @@ class KarooLightControl(private val context: Context) : LightController {
             callData.writeInt(1)
             device.writeToParcel(callData, 0)
             callData.writeStrongBinder(listenerBinder)
-            binder.transact(6, callData, callReply, 0)
+            binder.transact(txRegisterConnection, callData, callReply, 0)
             callReply.readException()
             registeredListeners.add(listenerId)
             Timber.d("$TAG: Registered connection state listener for $deviceId")
@@ -436,7 +436,7 @@ class KarooLightControl(private val context: Context) : LightController {
         try {
             data.writeInterfaceToken(SENSOR_DESCRIPTOR)
             data.writeString(listenerId)
-            binder.transact(7, data, reply, 0)
+            binder.transact(txUnregisterConnection, data, reply, 0)
             reply.readException()
             registeredListeners.remove(listenerId)
         } catch (e: Exception) {
